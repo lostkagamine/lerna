@@ -8,8 +8,15 @@ pub struct FuncArgument {
 }
 
 #[derive(Debug)]
-pub enum Expr {
+pub enum Lit {
     Int(i64),
+    Str(String),
+    Flt(f32)
+}
+
+#[derive(Debug)]
+pub enum Expr {
+    Lit(Lit),
     Var(String),
     Type(Type),
 
@@ -41,8 +48,14 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
     let stmt = recursive(|stmt| {
         let expr = recursive(|expr| {
             let int = text::int(10)
-                .map(|s: String| Expr::Int(s.parse().unwrap()))
+                .map(|s: String| Expr::Lit(Lit::Int(s.parse().unwrap())))
                 .padded();
+
+            let str =
+                just('"')
+                .ignore_then(filter(|c| *c != '\\' && *c != '"').repeated())
+                .then_ignore(just('"'))
+                .map(|b| Expr::Lit(Lit::Str(String::from_iter(b))));
 
             let arg_list =
                 expr.clone()
@@ -58,6 +71,7 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
             
             let atom =
                 int
+                .or(str)
                 .or(expr.clone().delimited_by(just('('), just(')')))
                 .or(func_call);
     
