@@ -2,6 +2,7 @@ use std::env;
 use chumsky::Parser;
 mod parse;
 mod eval;
+pub mod ir1;
 
 // https://github.com/zesterer/chumsky/blob/master/tutorial.md
 
