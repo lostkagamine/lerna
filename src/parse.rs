@@ -1,11 +1,4 @@
 use chumsky::prelude::*;
-use crate::eval::Type;
-
-#[derive(Debug)]
-pub struct FuncArgument {
-    typ: Type,
-    name: String
-}
 
 #[derive(Debug)]
 pub enum Lit {
@@ -18,7 +11,7 @@ pub enum Lit {
 pub enum Expr {
     Lit(Lit),
     Var(String),
-    Type(Type),
+    Type(String),
 
     Neg(Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
@@ -30,13 +23,19 @@ pub enum Expr {
 
     Assign {
         name: Box<Expr>,
+        typ: Box<Expr>,
         rhs: Box<Expr>
     },
 
     Func {
         name: Box<Expr>,
+        return_type: Box<Expr>,
         args: Vec<Box<Expr>>,
         body: Box<Vec<Expr>>
+    },
+
+    Return {
+        value: Box<Expr>
     }
 }
 
@@ -63,7 +62,8 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
                 .at_least(0)
                 .delimited_by(just('(').padded(), just(')').padded());
 
-            let func_call = ident
+            let func_call =
+                ident
                 .then(arg_list)
                 .map(|(lhs, rhs)| {
                     Expr::Call(Box::new(Expr::Var(lhs)), rhs)
@@ -77,7 +77,8 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
     
             let op = |c| just(c).padded();
     
-            let unary = op('-')
+            let unary =
+                op('-')
                 .repeated()
                 .then(atom)
                 .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
@@ -99,20 +100,36 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
             sum.padded()
         });
     
-        let decl = text::keyword("var")
-            .ignore_then(ident)
+        let decl =
+            ident
+            .then(ident)
             .then_ignore(just('='))
             .then(expr.clone())
-            .then_ignore(just(';'))
-            .map(|(lhs, rhs)| {
+            .map(|((typ, lhs), rhs)| {
                 Expr::Assign {
+                    typ: Box::new(Expr::Type(typ)),
                     name: Box::new(Expr::Var(lhs)),
                     rhs: Box::new(rhs)
                 }
             })
+            .then_ignore(just(';'))
+            .padded();
+
+        let r#return =
+            text::keyword("ret")
+            .or(
+                text::keyword("return")
+            )
+            .ignore_then(expr.clone())
+            .map(|e| {
+                Expr::Return {
+                    value: Box::new(e)
+                }
+            })
+            .then_ignore(just(';'))
             .padded();
     
-        let elem = decl.or(expr);
+        let elem = decl.or(r#return).or(expr);
         
         elem.padded()
     });
@@ -128,11 +145,13 @@ pub fn parse() -> impl Parser<char, Vec<Expr>, Error=Simple<char>> {
 
     let fcn_def =
         text::keyword("fcn")
-        .ignore_then(ident)
+        .ignore_then(ident) // Type
+        .then(ident)
         .then(ident_list)
         .then(block)
-        .map(|((name, args), block)| {
+        .map(|(((typ, name), args), block)| {
             Expr::Func {
+                return_type: Box::new(Expr::Type(typ)),
                 name: Box::new(Expr::Var(name)),
                 args: args.into_iter().map(Expr::Var).map(Box::new).collect(),
                 body: Box::new(block)
